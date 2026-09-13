@@ -1,35 +1,29 @@
 # Recomeço Inteligente — Quiz
 
-Funil estático mobile-first, sem backend:
+Versão para GitHub Pages com **todos os arquivos na raiz** (sem pasta `assets`).
 
-Quiz → análise → resultado → VSL → oferta → checkout.
+Fluxo:
 
-## Publicar gratuitamente no GitHub Pages
+Quiz → análise → captura de nome/e-mail/telefone → resultado → VSL → oferta → checkout.
 
-1. Crie um repositório público chamado `recomeco-inteligente-quiz`.
-2. Envie todos os arquivos desta pasta para a raiz do repositório.
-3. No GitHub, abra **Settings → Pages**.
-4. Em **Build and deployment**, selecione **Deploy from a branch**.
-5. Branch: `main`, pasta: `/ (root)` e clique em **Save**.
-6. Aguarde 1–3 minutos. O endereço será parecido com:
-   `https://SEU-USUARIO.github.io/recomeco-inteligente-quiz/`
+## Upload no GitHub
 
-## Antes de colocar tráfego
+Envie estes 8 arquivos diretamente para a raiz do repositório:
 
-Abra `app.js` e troque:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `README.md`
+- `sobrecarga-quiz.jpg`
+- `floral.jpg`
+- `vsl-poster.jpg`
+- `vsl.mp4`
 
-```js
-const CHECKOUT_URL = 'https://example.com/checkout';
-```
+Depois publique em **Settings → Pages → Deploy from a branch → main → /(root)**.
 
-pelo checkout real da Hotmart.
+## Importante sobre os contatos
 
-### Arquivos principais
-- `index.html`: estrutura da página.
-- `styles.css`: design e flores do fundo.
-- `app.js`: quiz, cálculos, VSL, oferta, cupom e UTMs.
-- `assets/sobrecarga-quiz.jpg`: imagem emocional.
-- `assets/vsl.mp4`: VSL.
-- `assets/floral.jpg`: decoração floral.
+A tela de nome/e-mail/telefone já está funcionando para liberar o resultado e registrar o evento `lead_submit` no navegador.
+Para os dados chegarem a uma lista, planilha ou ferramenta de e-mail/CRM, ainda é necessário conectar um destino de leads (por exemplo, Brevo, MailerLite, Google Sheets via webhook, Formspree etc.).
 
-O quiz sempre zera as respostas ao clicar em **COMEÇAR MINHA ANÁLISE**, portanto nenhuma opção inicia pré-selecionada.
+Checkout Hotmart configurado no `app.js`.

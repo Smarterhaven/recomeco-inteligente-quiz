@@ -10,7 +10,7 @@
   const COUPON_PRICE = LAUNCH_PRICE * (1 - COUPON_DISCOUNT / 100);
 
   const app = document.getElementById('app');
-  const state = { phase:'intro', step:0, answers:{}, sliderTouched:{}, offerEnteredAt:0 };
+  const state = { phase:'intro', step:0, answers:{}, sliderTouched:{}, lead:{name:'',email:'',phone:''}, offerEnteredAt:0 };
 
   const steps = [
     {id:'q1', type:'choice', q:'Quando você acorda, como sua cabeça costuma estar?', choices:[['A','Tranquila, sei o que preciso fazer'],['B','Já pensando em algumas tarefas'],['C','Cheia de coisas ao mesmo tempo'],['D','Parece que o dia começa antes de eu levantar']]},
@@ -57,6 +57,7 @@
     if(state.phase==='quiz') return renderQuiz();
     if(state.phase==='ready') return renderReady();
     if(state.phase==='analysis') return renderAnalysis();
+    if(state.phase==='lead') return renderLead();
     if(state.phase==='result') return renderResult();
     if(state.phase==='vsl') return renderVsl();
     if(state.phase==='offer') return renderOffer();
@@ -71,7 +72,7 @@
     </section>`);
     document.getElementById('startBtn').onclick=()=>{
       // Sempre começa zerado: nada preselecionado.
-      state.answers={}; state.sliderTouched={}; state.step=0; state.phase='quiz';
+      state.answers={}; state.sliderTouched={}; state.lead={name:'',email:'',phone:''}; state.step=0; state.phase='quiz';
       sessionStorage.removeItem('ri-exit-seen');
       track('quiz_start'); render();
     };
@@ -115,7 +116,7 @@
 
   function renderInterlude(){
     app.innerHTML = shell(`<section class="card interlude fade-in">
-      <img src="assets/sobrecarga-quiz.jpg" alt="Mulher sobrecarregada com tarefas e rotina familiar" />
+      <img src="sobrecarga-quiz.jpg" alt="Mulher sobrecarregada com tarefas e rotina familiar" />
       <div class="interlude-copy"><p>Suas respostas mostram que o seu <em>cansaço</em> não vem só das tarefas. Vem também de tentar lembrar, decidir e dar conta de tudo ao mesmo tempo.</p><button class="btn" id="continueBtn">CONTINUAR</button></div>
     </section>`,{progress:40,back:true});
     bindBack(); document.getElementById('continueBtn').onclick=()=>{state.step++;render();};
@@ -135,7 +136,7 @@
       const p=Math.min(100,Math.round(((now-start)/duration)*100));
       document.getElementById('ring').style.setProperty('--p',p); document.getElementById('num').textContent=p+'%';
       lines.forEach((_,i)=>document.getElementById('ck'+i).classList.toggle('done',p>=(i+1)*18));
-      if(p<100) requestAnimationFrame(tick); else setTimeout(()=>{state.phase='result';track('analysis_complete');render();},650);
+      if(p<100) requestAnimationFrame(tick); else setTimeout(()=>{state.phase='lead';track('analysis_complete');render();},650);
     }; requestAnimationFrame(tick);
   }
 
@@ -285,6 +286,48 @@
     return `<div class="reading-card"><div class="reading-label">O QUE SUAS RESPOSTAS REVELAM</div><p><strong>${b.lead.split('. ')[0]}.</strong>${b.lead.includes('. ')?' '+b.lead.split('. ').slice(1).join('. '):''}</p><p><strong>O que pode ajudar agora:</strong> ${b.help}</p><div class="reading-quote">${b.quote}</div></div>`;
   }
 
+
+  function renderLead(){
+    const saved = state.lead || {name:'',email:'',phone:''};
+    app.innerHTML = shell(`<section class="card lead-card fade-in">
+      <div class="eyebrow">SUA ANÁLISE ESTÁ PRONTA</div>
+      <h2>Antes de mostrar seu resultado…</h2>
+      <p class="lead-intro">Preencha seus dados para liberar sua análise personalizada.</p>
+      <form id="leadForm" class="lead-form" novalidate>
+        <label>Seu nome
+          <input id="leadName" name="name" type="text" autocomplete="name" placeholder="Como você gosta de ser chamada?" value="${escapeHtml(saved.name||'')}" required />
+        </label>
+        <label>Seu melhor e-mail
+          <input id="leadEmail" name="email" type="email" autocomplete="email" placeholder="voce@email.com" value="${escapeHtml(saved.email||'')}" required />
+        </label>
+        <label>Seu telefone / WhatsApp
+          <input id="leadPhone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="(00) 00000-0000" value="${escapeHtml(saved.phone||'')}" required />
+        </label>
+        <div class="lead-error" id="leadError" role="alert"></div>
+        <button class="btn" type="submit">VER MEU RESULTADO</button>
+      </form>
+      <p class="privacy-note">Seus dados são usados para liberar seu resultado e continuar seu atendimento relacionado ao Recomeço Inteligente.</p>
+    </section>`,{back:false});
+
+    const form=document.getElementById('leadForm');
+    form.onsubmit=(e)=>{
+      e.preventDefault();
+      const name=document.getElementById('leadName').value.trim();
+      const email=document.getElementById('leadEmail').value.trim();
+      const phone=document.getElementById('leadPhone').value.trim();
+      const err=document.getElementById('leadError');
+      const validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      if(name.length<2){err.textContent='Digite seu nome para continuar.';return;}
+      if(!validEmail){err.textContent='Digite um e-mail válido para continuar.';return;}
+      if(phone.replace(/\D/g,'').length<8){err.textContent='Digite um telefone/WhatsApp válido para continuar.';return;}
+      state.lead={name,email,phone};
+      try{sessionStorage.setItem('ri-lead',JSON.stringify(state.lead));}catch{}
+      track('lead_submit',{lead_name:name});
+      state.phase='result';
+      render();
+    };
+  }
+
   function metric(label,value){return `<div class="metric"><div class="metric-head"><span>${label}</span><strong>${value}%</strong></div><div class="track"><div class="fill" data-width="${value}%"></div></div></div>`;}
   function renderResult(){
     const sc=scores();
@@ -295,7 +338,7 @@
   }
 
   function renderVsl(){
-    app.innerHTML=shell(`<section class="card vsl-card fade-in"><div class="video-wrap"><video id="vsl" src="assets/vsl.mp4" poster="assets/vsl-poster.jpg" playsinline preload="auto" controlsList="nodownload noplaybackrate nofullscreen"></video><div class="video-overlay" id="videoOverlay">Preparando seu vídeo...</div></div><div class="vsl-copy"><h2>Assista até o final.</h2><p>Quando o vídeo terminar, eu vou te mostrar como o Recomeço Inteligente pode ajudar você a sair desse caos, parar de viver apagando incêndios, organizar sua rotina e voltar a sentir que sua vida está nas suas mãos.</p><button class="btn hidden" id="offerBtn">VER TUDO O QUE EU VOU RECEBER</button></div></section>`);
+    app.innerHTML=shell(`<section class="card vsl-card fade-in"><div class="video-wrap"><video id="vsl" src="vsl.mp4" poster="vsl-poster.jpg" playsinline preload="auto" controlsList="nodownload noplaybackrate nofullscreen"></video><div class="video-overlay" id="videoOverlay">Preparando seu vídeo...</div></div><div class="vsl-copy"><h2>Assista até o final.</h2><p>Quando o vídeo terminar, eu vou te mostrar como o Recomeço Inteligente pode ajudar você a sair desse caos, parar de viver apagando incêndios, organizar sua rotina e voltar a sentir que sua vida está nas suas mãos.</p><button class="btn hidden" id="offerBtn">VER TUDO O QUE EU VOU RECEBER</button></div></section>`);
     const v=document.getElementById('vsl');
     const overlay=document.getElementById('videoOverlay');
     const offerBtn=document.getElementById('offerBtn');
