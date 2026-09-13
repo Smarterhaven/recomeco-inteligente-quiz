@@ -3,6 +3,7 @@
 
   // Troque por seu link real da Hotmart antes de publicar.
   const CHECKOUT_URL = 'https://pay.hotmart.com/U106884729U?checkoutMode=10';
+  const LEAD_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyeBojFqad-9tpwAdFW8UlkCEjA8VHcm9ZpTSLgWzNn0zCQAt7lLSfvvusi7SvY2-J9/exec';
   const LAUNCH_PRICE = 67;
   const REFERENCE_PRICE = 197;
   const COUPON = 'LANÇAMENTO';
@@ -287,6 +288,71 @@
   }
 
 
+  function leadPayload(name,email,phone){
+    const sc=scores();
+    const profile=getProfile(sc);
+    const p=trackingParams();
+    return new URLSearchParams({
+      nome:name,
+      email:email,
+      telefone:phone,
+      perfil:profile.title,
+      cargaMental:String(sc.carga),
+      clareza:String(sc.clareza),
+      tempo:String(sc.tempo),
+      controle:String(sc.controle),
+      origem:p.get('utm_source') || p.get('source') || (p.get('fbclid') ? 'Meta/Facebook' : 'Direto'),
+      campanha:p.get('utm_campaign') || '',
+      anuncio:p.get('utm_content') || p.get('ad_id') || p.get('utm_term') || ''
+    });
+  }
+
+  function submitLeadFallback(params){
+    try{
+      const frameName='riLeadFrame_'+Date.now();
+      const iframe=document.createElement('iframe');
+      iframe.name=frameName;
+      iframe.style.display='none';
+      document.body.appendChild(iframe);
+
+      const form=document.createElement('form');
+      form.method='POST';
+      form.action=LEAD_ENDPOINT;
+      form.target=frameName;
+      form.style.display='none';
+      for(const [key,value] of params.entries()){
+        const input=document.createElement('input');
+        input.type='hidden'; input.name=key; input.value=value;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+      setTimeout(()=>{form.remove();iframe.remove();},10000);
+    }catch{}
+  }
+
+  async function saveLead(name,email,phone){
+    const params=leadPayload(name,email,phone);
+    try{
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),3500);
+      await fetch(LEAD_ENDPOINT,{
+        method:'POST',
+        mode:'no-cors',
+        headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+        body:params.toString(),
+        keepalive:true,
+        signal:controller.signal
+      });
+      clearTimeout(timer);
+      return true;
+    }catch{
+      submitLeadFallback(params);
+      return false;
+    }
+  }
+
+
   function renderLead(){
     const saved = state.lead || {name:'',email:'',phone:''};
     app.innerHTML = shell(`<section class="card lead-card fade-in">
@@ -310,18 +376,23 @@
     </section>`,{back:false});
 
     const form=document.getElementById('leadForm');
-    form.onsubmit=(e)=>{
+    form.onsubmit=async(e)=>{
       e.preventDefault();
       const name=document.getElementById('leadName').value.trim();
       const email=document.getElementById('leadEmail').value.trim();
       const phone=document.getElementById('leadPhone').value.trim();
       const err=document.getElementById('leadError');
+      const btn=form.querySelector('button[type="submit"]');
       const validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
       if(name.length<2){err.textContent='Digite seu nome para continuar.';return;}
       if(!validEmail){err.textContent='Digite um e-mail válido para continuar.';return;}
       if(phone.replace(/\D/g,'').length<8){err.textContent='Digite um telefone/WhatsApp válido para continuar.';return;}
+      err.textContent='';
+      btn.disabled=true;
+      btn.textContent='LIBERANDO SEU RESULTADO...';
       state.lead={name,email,phone};
       try{sessionStorage.setItem('ri-lead',JSON.stringify(state.lead));}catch{}
+      await saveLead(name,email,phone);
       track('lead_submit',{lead_name:name});
       state.phase='result';
       render();
@@ -414,26 +485,44 @@
   function setupExitIntent(){
     if(sessionStorage.getItem('ri-exit-seen'))return;
     const MIN_OFFER_TIME=25000;
+    let lastY=999;
+
+    const eligible=()=>Date.now()-(state.offerEnteredAt||Date.now())>=MIN_OFFER_TIME;
+    const cleanup=()=>{
+      document.removeEventListener('mousemove',trackMouse,true);
+      document.removeEventListener('mouseout',desktopExit,true);
+      document.documentElement.removeEventListener('mouseleave',htmlExit,true);
+    };
     const show=()=>{
-      if(sessionStorage.getItem('ri-exit-seen')) return;
+      if(sessionStorage.getItem('ri-exit-seen') || !eligible()) return;
       sessionStorage.setItem('ri-exit-seen','1');
+      cleanup();
       showCoupon();
-      document.removeEventListener('mouseleave',desktop);
     };
-    const desktop=e=>{
-      const elapsed=Date.now() - (state.offerEnteredAt || Date.now());
-      if(e.clientY<=2 && elapsed>=MIN_OFFER_TIME) show();
+    const trackMouse=e=>{
+      lastY=e.clientY;
+      // Em alguns navegadores o evento de saída não dispara; chegar ao topo
+      // depois do tempo mínimo funciona como um fallback de intenção de saída.
+      if(eligible() && e.clientY<=6) show();
     };
-    document.addEventListener('mouseleave',desktop);
-    window.__exitPop=()=>{
-      const elapsed=Date.now() - (state.offerEnteredAt || Date.now());
-      if(elapsed>=MIN_OFFER_TIME) show();
+    const desktopExit=e=>{
+      if(!e.relatedTarget && !e.toElement && e.clientY<=20) show();
     };
+    const htmlExit=e=>{
+      if(lastY<=80 || e.clientY<=20) show();
+    };
+
+    document.addEventListener('mousemove',trackMouse,true);
+    document.addEventListener('mouseout',desktopExit,true);
+    document.documentElement.addEventListener('mouseleave',htmlExit,true);
+    window.__exitPop=show;
   }
   window.addEventListener('popstate',()=>{
-    const elapsed = Date.now() - (state.offerEnteredAt || Date.now());
-    if(state.phase==='offer'&&!sessionStorage.getItem('ri-exit-seen') && elapsed>=25000){
-      sessionStorage.setItem('ri-exit-seen','1'); showCoupon(true); history.pushState({offer:true},'',location.href);
+    const elapsed=Date.now()-(state.offerEnteredAt||Date.now());
+    if(state.phase==='offer' && !sessionStorage.getItem('ri-exit-seen') && elapsed>=25000){
+      sessionStorage.setItem('ri-exit-seen','1');
+      history.pushState({offer:true},'',location.href);
+      showCoupon(true);
     }
   });
   function showCoupon(fromBack=false){
