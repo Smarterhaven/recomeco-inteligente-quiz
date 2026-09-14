@@ -483,38 +483,56 @@
   }
 
   function setupExitIntent(){
-    if(sessionStorage.getItem('ri-exit-seen'))return;
-    const MIN_OFFER_TIME=25000;
-    let lastY=999;
+    if(sessionStorage.getItem('ri-exit-seen')) return;
 
-    const eligible=()=>Date.now()-(state.offerEnteredAt||Date.now())>=MIN_OFFER_TIME;
-    const cleanup=()=>{
-      document.removeEventListener('mousemove',trackMouse,true);
-      document.removeEventListener('mouseout',desktopExit,true);
-      document.documentElement.removeEventListener('mouseleave',htmlExit,true);
+    const MIN_OFFER_TIME=25000;
+    let lastY=window.innerHeight;
+    let fired=false;
+
+    const eligible=()=>{
+      if(fired || state.phase!=='offer' || sessionStorage.getItem('ri-exit-seen')) return false;
+      return Date.now() - state.offerEnteredAt >= MIN_OFFER_TIME;
     };
+
+    const cleanup=()=>{
+      document.removeEventListener('mousemove',onMove,true);
+      document.removeEventListener('mouseout',onOut,true);
+      document.removeEventListener('mouseleave',onLeave,true);
+    };
+
     const show=()=>{
-      if(sessionStorage.getItem('ri-exit-seen') || !eligible()) return;
+      if(!eligible()) return;
+      fired=true;
       sessionStorage.setItem('ri-exit-seen','1');
       cleanup();
       showCoupon();
     };
-    const trackMouse=e=>{
-      lastY=e.clientY;
-      // Em alguns navegadores o evento de saída não dispara; chegar ao topo
-      // depois do tempo mínimo funciona como um fallback de intenção de saída.
-      if(eligible() && e.clientY<=6) show();
-    };
-    const desktopExit=e=>{
-      if(!e.relatedTarget && !e.toElement && e.clientY<=20) show();
-    };
-    const htmlExit=e=>{
-      if(lastY<=80 || e.clientY<=20) show();
+
+    // Gatilho principal: detecta o cursor subindo em direção às abas / botão de fechar
+    // antes mesmo de ele sair totalmente da página. Isso é mais confiável no Chrome/Safari.
+    const onMove=e=>{
+      const y=e.clientY;
+      const movingUp=y<lastY;
+      if(eligible() && movingUp && y>=0 && y<=14) show();
+      lastY=y;
     };
 
-    document.addEventListener('mousemove',trackMouse,true);
-    document.addEventListener('mouseout',desktopExit,true);
-    document.documentElement.addEventListener('mouseleave',htmlExit,true);
+    // Fallback: quando o cursor realmente deixa a área do documento pelo topo.
+    const onOut=e=>{
+      if(!eligible()) return;
+      const leftDocument=!e.relatedTarget && !e.toElement;
+      if(leftDocument && e.clientY<=30) show();
+    };
+
+    const onLeave=e=>{
+      if(eligible() && e.clientY<=30) show();
+    };
+
+    document.addEventListener('mousemove',onMove,true);
+    document.addEventListener('mouseout',onOut,true);
+    document.addEventListener('mouseleave',onLeave,true);
+
+    // Mantém um gatilho manual apenas para diagnóstico, sem aparecer para a visitante.
     window.__exitPop=show;
   }
   window.addEventListener('popstate',()=>{
