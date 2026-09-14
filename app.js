@@ -40,7 +40,31 @@
   function track(name, extra={}){
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({event:name,...extra});
-    if(window.fbq) window.fbq('trackCustom',name,extra);
+
+    if(window.fbq){
+      const metaEvents = {
+        quiz_start: {type:'custom', event:'QuizStart'},
+        analysis_start: {type:'custom', event:'AnalysisStart'},
+        lead_submit: {type:'standard', event:'Lead', params:{content_name:'Quiz Recomeço Inteligente'}},
+        result_view: {type:'standard', event:'ViewContent', params:{content_name:'Resultado do Quiz Recomeço Inteligente'}},
+        vsl_open: {type:'custom', event:'VSLStart'},
+        vsl_complete: {type:'custom', event:'VSLComplete'},
+        offer_view: {type:'standard', event:'ViewContent', params:{content_name:'Oferta Recomeço Inteligente',content_type:'product',value:LAUNCH_PRICE,currency:'BRL'}},
+        checkout_click: {type:'standard', event:'InitiateCheckout', params:{content_name:'Recomeço Inteligente',content_type:'product',value:LAUNCH_PRICE,currency:'BRL'}},
+        exit_coupon_view: {type:'custom', event:'ExitCouponView'},
+        exit_coupon_accept: {type:'custom', event:'ExitCouponAccept'},
+        exit_coupon_decline: {type:'custom', event:'ExitCouponDecline'}
+      };
+      const cfg=metaEvents[name];
+      if(cfg){
+        const params={...(cfg.params||{}),...extra};
+        if(cfg.type==='standard') window.fbq('track',cfg.event,params);
+        else window.fbq('trackCustom',cfg.event,params);
+      } else {
+        window.fbq('trackCustom',name,extra);
+      }
+    }
+
     if(window.gtag) window.gtag('event',name,extra);
   }
 
@@ -393,7 +417,7 @@
       state.lead={name,email,phone};
       try{sessionStorage.setItem('ri-lead',JSON.stringify(state.lead));}catch{}
       await saveLead(name,email,phone);
-      track('lead_submit',{lead_name:name});
+      track('lead_submit');
       state.phase='result';
       render();
     };
@@ -403,6 +427,7 @@
   function renderResult(){
     const sc=scores();
     const profile=getProfile(sc);
+    track('result_view',{profile:profile.title});
     app.innerHTML=shell(`<section class="card result fade-in"><div class="eyebrow">SEU RESULTADO</div><h2>${profile.title}</h2><p class="result-lead">${paragraph(sc,profile)}</p>${metric('Carga mental',sc.carga)}${metric('Clareza de prioridades',sc.clareza)}${metric('Tempo para você',sc.tempo)}${metric('Sensação de controle',sc.controle)}${resultReading(sc,profile)}<h3>Eu quero te mostrar uma coisa antes de você sair daqui.</h3><p class="result-lead">Preparei um vídeo curto para mostrar como começar de um jeito mais simples — mesmo sem dominar tecnologia.</p><button class="btn" id="watchBtn">ASSISTIR AGORA</button><div class="disclaimer">Esta é uma leitura orientativa baseada nas suas respostas e não substitui avaliação médica ou psicológica.</div></section>`,{back:false});
     requestAnimationFrame(()=>document.querySelectorAll('.fill').forEach(el=>el.style.width=el.dataset.width));
     document.getElementById('watchBtn').onclick=()=>{state.phase='vsl';track('vsl_open');render();};
