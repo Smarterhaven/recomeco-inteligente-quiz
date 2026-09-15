@@ -11,7 +11,7 @@
   const COUPON_PRICE = LAUNCH_PRICE * (1 - COUPON_DISCOUNT / 100);
 
   const app = document.getElementById('app');
-  const state = { phase:'intro', step:0, answers:{}, sliderTouched:{}, lead:{name:'',email:'',phone:''}, offerEnteredAt:0 };
+  const state = { phase:'intro', step:0, answers:{}, sliderTouched:{}, lead:{name:'',email:'',phone:''}, offerEnteredAt:0, tracked:{} };
 
   const steps = [
     {id:'q1', type:'choice', q:'Quando você acorda, como sua cabeça costuma estar?', choices:[['A','Tranquila, sei o que preciso fazer'],['B','Já pensando em algumas tarefas'],['C','Cheia de coisas ao mesmo tempo'],['D','Parece que o dia começa antes de eu levantar']]},
@@ -43,7 +43,10 @@
 
     if(window.fbq){
       const metaEvents = {
-        quiz_start: {type:'custom', event:'QuizStart'},
+        quiz_start: {type:'custom', event:'StartQuiz'},
+        quiz_50: {type:'custom', event:'Quiz50'},
+        quiz_complete: {type:'custom', event:'QuizComplete'},
+        capture_view: {type:'custom', event:'CaptureView'},
         analysis_start: {type:'custom', event:'AnalysisStart'},
         lead_submit: {type:'standard', event:'Lead', params:{content_name:'Quiz Recomeço Inteligente'}},
         result_view: {type:'standard', event:'ViewContent', params:{content_name:'Resultado do Quiz Recomeço Inteligente'}},
@@ -66,6 +69,24 @@
     }
 
     if(window.gtag) window.gtag('event',name,extra);
+  }
+
+  function trackOnce(key,name,extra={}){
+    if(state.tracked[key]) return;
+    state.tracked[key]=true;
+    track(name,extra);
+  }
+
+  function trackQuizMilestones(questionId){
+    const questionNumber=questionSteps.findIndex(q=>q.id===questionId)+1;
+    if(questionNumber>=5){
+      trackOnce('quiz_50','quiz_50',{progress:50,question_number:questionNumber});
+    }
+    if(questionNumber>=questionSteps.length){
+      const sc=scores();
+      const profile=getProfile(sc);
+      trackOnce('quiz_complete','quiz_complete',{questions_answered:questionSteps.length,profile:profile.title});
+    }
   }
 
   function shell(content, {progress=null, back=false, offer=false}={}){
@@ -97,9 +118,9 @@
     </section>`);
     document.getElementById('startBtn').onclick=()=>{
       // Sempre começa zerado: nada preselecionado.
-      state.answers={}; state.sliderTouched={}; state.lead={name:'',email:'',phone:''}; state.step=0; state.phase='quiz';
+      state.answers={}; state.sliderTouched={}; state.lead={name:'',email:'',phone:''}; state.step=0; state.phase='quiz'; state.tracked={};
       sessionStorage.removeItem('ri-exit-seen');
-      track('quiz_start'); render();
+      trackOnce('quiz_start','quiz_start'); render();
     };
   }
 
@@ -122,6 +143,7 @@
       bindBack();
       document.querySelectorAll('.option').forEach(el=>el.onclick=()=>{
         state.answers[s.id]=el.dataset.id;
+        trackQuizMilestones(s.id);
         document.querySelectorAll('.option').forEach(o=>o.classList.remove('selected'));
         el.classList.add('selected');
         setTimeout(()=>{state.step++;render();},220);
@@ -135,7 +157,7 @@
       bindBack();
       const range=document.getElementById('range'), value=document.getElementById('sliderValue'), next=document.getElementById('sliderNext');
       range.oninput=()=>{ value.textContent=range.value; state.answers[s.id]=Number(range.value); state.sliderTouched[s.id]=true; next.disabled=false; document.querySelector('.notice').textContent=''; };
-      next.onclick=()=>{ if(!state.sliderTouched[s.id]) return; state.step++; render(); };
+      next.onclick=()=>{ if(!state.sliderTouched[s.id]) return; trackQuizMilestones(s.id); state.step++; render(); };
     }
   }
 
@@ -378,6 +400,7 @@
 
 
   function renderLead(){
+    trackOnce('capture_view','capture_view');
     const saved = state.lead || {name:'',email:'',phone:''};
     app.innerHTML = shell(`<section class="card lead-card fade-in">
       <div class="eyebrow">SUA ANÁLISE ESTÁ PRONTA</div>
@@ -400,7 +423,7 @@
     </section>`,{back:false});
 
     const form=document.getElementById('leadForm');
-    form.onsubmit=async(e)=>{
+    form.onsubmit=(e)=>{
       e.preventDefault();
       const name=document.getElementById('leadName').value.trim();
       const email=document.getElementById('leadEmail').value.trim();
@@ -416,10 +439,12 @@
       btn.textContent='LIBERANDO SEU RESULTADO...';
       state.lead={name,email,phone};
       try{sessionStorage.setItem('ri-lead',JSON.stringify(state.lead));}catch{}
-      await saveLead(name,email,phone);
-      track('lead_submit');
+
+      // Libera o resultado imediatamente.
+      // O envio para Apps Script (Planilha + Manycontent + Brevo) continua em segundo plano.
       state.phase='result';
       render();
+      void saveLead(name,email,phone).then(()=>trackOnce('lead_submit','lead_submit'));
     };
   }
 
